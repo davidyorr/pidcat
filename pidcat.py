@@ -25,6 +25,7 @@ import argparse
 import sys
 import re
 import subprocess
+import os
 from subprocess import PIPE
 
 __version__ = '2.0.0'
@@ -44,6 +45,7 @@ parser.add_argument('-e', '--emulator', dest='use_emulator', action='store_true'
 parser.add_argument('-c', '--clear', dest='clear_logcat', action='store_true', help='Clear the entire log before running')
 parser.add_argument('-t', '--tag', dest='tag', action='append', help='Filter output by specified tag(s)')
 parser.add_argument('-i', '--ignore-tag', dest='ignored_tag', action='append', help='Filter output by ignoring specified tag(s)')
+parser.add_argument('-o', '--output-file', dest='logfile_dest', nargs='?', const='$TMPDIR/pidcat.log', default=None, help='Log output to a logfile (default $TMPDIR/pidcat.log)')
 parser.add_argument('-v', '--version', action='version', version='%(prog)s ' + __version__, help='Print the version number and exit')
 parser.add_argument('-a', '--all', dest='all', action='store_true', default=False, help='Print all log messages')
 
@@ -75,6 +77,13 @@ catchall_package = filter(lambda package: package.find(":") == -1, package)
 named_processes = filter(lambda package: package.find(":") != -1, package)
 # Convert default process names from <package>: (cli notation) to <package> (android notation) in the exact names match group.
 named_processes = map(lambda package: package if package.find(":") != len(package) - 1 else package[:-1], named_processes)
+
+# Create the log file if specified
+fo = None
+if args.logfile_dest:
+  logfile_dest = args.logfile_dest
+  path = os.path.realpath(os.path.expandvars(args.logfile_dest))
+  fo = open(path, 'w+')
 
 header_size = args.tag_width + 1 + 3 + 1 # space, level, space
 
@@ -252,6 +261,11 @@ def parse_start_proc(line):
 def tag_in_tags_regex(tag, tags):  
   return any(re.match(r'^' + t + r'$', tag) for t in map(str.strip, tags))
 
+def process_line(line):
+  if fo is not None:
+    fo.write(line+'\n')
+  print(line)
+
 ps_command = base_adb_command + ['shell', 'ps']
 ps_pid = subprocess.Popen(ps_command, stdin=PIPE, stdout=PIPE, stderr=PIPE)
 while True:
@@ -302,7 +316,7 @@ while adb.poll() is None:
       linebuf += colorize(' ' * (header_size - 1), bg=WHITE)
       linebuf += ' PID: %s   UID: %s   GIDs: %s' % (line_pid, line_uid, line_gids)
       linebuf += '\n'
-      print(linebuf)
+      process_line(linebuf)
       last_tag = None # Ensure next log gets a tag printed
 
   dead_pid, dead_pname = parse_death(tag, message)
@@ -312,7 +326,7 @@ while adb.poll() is None:
     linebuf += colorize(' ' * (header_size - 1), bg=RED)
     linebuf += ' Process %s (PID: %s) ended' % (dead_pname, dead_pid)
     linebuf += '\n'
-    print(linebuf)
+    process_line(linebuf)
     last_tag = None # Ensure next log gets a tag printed
 
   # Make sure the backtrace is printed after a native crash
@@ -357,4 +371,7 @@ while adb.poll() is None:
     message = matcher.sub(replace, message)
 
   linebuf += indent_wrap(message)
-  print(linebuf.encode('utf-8'))
+  process_line(linebuf.encode('utf-8'))
+
+if fo is not None:
+  fo.close()
