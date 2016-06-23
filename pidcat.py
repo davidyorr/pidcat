@@ -35,6 +35,7 @@ LOG_LEVELS_MAP = dict([(LOG_LEVELS[i], i) for i in range(len(LOG_LEVELS))])
 parser = argparse.ArgumentParser(description='Filter logcat by package name')
 parser.add_argument('package', nargs='*', help='Application package name(s)')
 parser.add_argument('-w', '--tag-width', metavar='N', dest='tag_width', type=int, default=23, help='Width of log tag')
+parser.add_argument('-S', '--chop-long-lines', dest='chop_long_lines', action='store_true', help='Disable line wrapping')
 parser.add_argument('-l', '--min-level', dest='min_level', type=str, choices=LOG_LEVELS+LOG_LEVELS.lower(), default='V', help='Minimum level to be displayed')
 parser.add_argument('--color-gc', dest='color_gc', action='store_true', help='Color garbage collection')
 parser.add_argument('--always-display-tags', dest='always_tags', action='store_true',help='Always display the tag name')
@@ -109,7 +110,7 @@ def colorize(message, fg=None, bg=None):
   return termcolor(fg, bg) + message + RESET
 
 def indent_wrap(message):
-  if width == -1:
+  if width == -1 or args.chop_long_lines:
     return message
   message = message.replace('\t', '    ')
   wrap_area = width - header_size
@@ -264,6 +265,8 @@ def tag_in_tags_regex(tag, tags):
 def process_line(line):
   if fo is not None:
     fo.write(line+'\n')
+    if args.chop_long_lines:
+      fo.flush()
   print(line)
 
 ps_command = base_adb_command + ['shell', 'ps']
